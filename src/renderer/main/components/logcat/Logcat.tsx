@@ -1,5 +1,6 @@
 import { observer } from 'mobx-react-lite'
 import LunaToolbar, {
+  LunaToolbarHtml,
   LunaToolbarInput,
   LunaToolbarSelect,
   LunaToolbarSeparator,
@@ -12,7 +13,7 @@ import rpad from 'licia/rpad'
 import dateFormat from 'licia/dateFormat'
 import toNum from 'licia/toNum'
 import trim from 'licia/trim'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import store from '../../store'
 import copy from 'licia/copy'
 import download from 'licia/download'
@@ -20,11 +21,30 @@ import toStr from 'licia/toStr'
 import { t } from 'common/util'
 import ToolbarIcon from 'share/renderer/components/ToolbarIcon'
 import contextMenu from 'share/renderer/lib/contextMenu'
+import {
+  createLogcatSearch,
+  getLogcatSearchEntries,
+  matchesLogcatSearch,
+} from './search'
+import { highlightLogcat } from './highlight'
+import Style from './Logcat.module.scss'
+
+const MAX_LOG_ENTRIES = 10000
 
 export default observer(function Logcat() {
   const [view, setView] = useState<'compact' | 'standard'>('standard')
   const [softWrap, setSoftWrap] = useState(false)
   const [paused, setPaused] = useState(false)
+  const [query, setQuery] = useState('')
+  const [useRegex, setUseRegex] = useState(false)
+  const [matchCase, setMatchCase] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const search = useMemo(
+    () => createLogcatSearch(searchQuery, useRegex, matchCase),
+    [searchQuery, useRegex, matchCase]
+  )
+  const searchRef = useRef(search.expression)
+  const searchErrorId = useId()
   const [filter, setFilter] = useState<{
     priority?: number
     package?: string
@@ -37,13 +57,29 @@ export default observer(function Logcat() {
   const { device } = store
 
   useEffect(() => {
+    // Avoid rebuilding a large log buffer for every keystroke.
+    if (!query) {
+      setSearchQuery('')
+      return
+    }
+    const timer = setTimeout(() => setSearchQuery(query), 150)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  useEffect(() => {
+    searchRef.current = search.expression
+  }, [search.expression])
+
+  useEffect(() => {
     function onLogcatEntry(id, entry) {
       if (logcatIdRef.current !== id) {
         return
       }
       if (logcatRef.current) {
-        logcatRef.current.append(entry)
         entriesRef.current.push(entry)
+        if (matchesLogcatSearch(entry.message, searchRef.current)) {
+          logcatRef.current.append(entry)
+        }
       }
     }
     const offLogcatEntry = main.on('logcatEntry', onLogcatEntry)
@@ -93,6 +129,8 @@ export default observer(function Logcat() {
   function clear() {
     if (logcatRef.current) {
       logcatRef.current.clear()
+      // Reset Luna's displayed-entry cache as well as its virtual list.
+      logcatRef.current.setOption('filter', { ...filter })
     }
     entriesRef.current = []
   }
@@ -124,9 +162,9 @@ export default observer(function Logcat() {
   }
 
   return (
-    <div className="panel-with-toolbar">
+    <div className={Style.container}>
       <LunaToolbar
-        className="panel-toolbar"
+        className={Style.toolbar}
         onChange={(key, val) => {
           switch (key) {
             case 'view':
@@ -185,6 +223,54 @@ export default observer(function Logcat() {
           placeholder={t('tag')}
           value={filter.tag || ''}
         />
+        <LunaToolbarHtml className={Style.search}>
+          <input
+            type="search"
+            className={Style.searchInput}
+            placeholder={t('searchLogMessages')}
+            aria-label={t('searchLogMessages')}
+            aria-invalid={search.error}
+            aria-describedby={search.error ? searchErrorId : undefined}
+            maxLength={1000}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setQuery('')
+              }
+            }}
+          />
+          <button
+            type="button"
+            className={Style.searchButton}
+            title={t('clearLogSearch')}
+            aria-label={t('clearLogSearch')}
+            disabled={!query}
+            onClick={() => setQuery('')}
+          >
+            ×
+          </button>
+          <button
+            type="button"
+            className={Style.searchButton}
+            title={t('useRegularExpression')}
+            aria-label={t('useRegularExpression')}
+            aria-pressed={useRegex}
+            onClick={() => setUseRegex(!useRegex)}
+          >
+            .*
+          </button>
+          <button
+            type="button"
+            className={Style.searchButton}
+            title={t('matchCase')}
+            aria-label={t('matchCase')}
+            aria-pressed={matchCase}
+            onClick={() => setMatchCase(!matchCase)}
+          >
+            Aa
+          </button>
+        </LunaToolbarHtml>
         <LunaToolbarSpace />
         <ToolbarIcon
           icon="save"
@@ -242,14 +328,45 @@ export default observer(function Logcat() {
           disabled={!device}
         />
       </LunaToolbar>
+      {search.error && (
+        <div className={Style.searchError} id={searchErrorId} role="status">
+          {t('invalidLogSearchRegex')}
+        </div>
+      )}
       <LunaLogcat
-        className="panel-body"
-        maxNum={10000}
+        key={
+          search.expression
+            ? `${search.expression.pattern()}/${search.expression.flags()}`
+            : ''
+        }
+        className={Style.body}
+        maxNum={MAX_LOG_ENTRIES}
         filter={filter}
         wrapLongLines={softWrap}
         onContextMenu={onContextMenu}
         view={view}
-        onCreate={(logcat) => (logcatRef.current = logcat)}
+        onCreate={(logcat) => {
+          logcatRef.current = logcat
+          const stopHighlight = highlightLogcat(
+            logcat.container,
+            search.expression
+          )
+          logcat.on('destroy', () => {
+            stopHighlight()
+            if (logcatRef.current === logcat) {
+              logcatRef.current = null
+            }
+          })
+          // Rebuild only the viewer when searching; keep the original entries
+          // and the running ADB stream for save, pause and resume.
+          for (const entry of getLogcatSearchEntries(
+            entriesRef.current,
+            search.expression,
+            MAX_LOG_ENTRIES
+          )) {
+            logcat.append(entry)
+          }
+        }}
       />
     </div>
   )
