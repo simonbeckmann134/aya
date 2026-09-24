@@ -58,5 +58,10 @@ export function highlightLogcat(
   observer.observe(container, { childList: true, subtree: true })
   container.querySelectorAll(selector).forEach(highlight)
 
-  return () => observer.disconnect()
+  return () => {
+    observer.disconnect()
+    container
+      .querySelectorAll('mark[data-logcat-search]')
+      .forEach((mark) => mark.replaceWith(mark.textContent || ''))
+  }
 }

@@ -64,7 +64,8 @@ export function getLogcatSearchEntries<T extends { message: string }>(
   }
 
   const matches: T[] = []
-  for (let i = entries.length - 1; i >= 0 && matches.length < maxNum; i--) {
+  const start = Math.max(0, entries.length - maxNum)
+  for (let i = entries.length - 1; i >= start; i--) {
     if (matchesLogcatSearch(entries[i].message, expression)) {
       matches.push(entries[i])
     }

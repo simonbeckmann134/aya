@@ -25,6 +25,7 @@ import {
   getLogcatSearchEntries,
   matchesLogcatSearch,
 } from './search'
+import type { LogcatSearchExpression } from './search'
 import { highlightLogcat } from './highlight'
 import HistoryInput from './HistoryInput'
 import {
@@ -38,6 +39,34 @@ import Style from './Logcat.module.scss'
 
 const MAX_LOG_ENTRIES = 10000
 const LOGCAT_SEARCH_HISTORY_STORE = 'logcatSearchHistory'
+
+type LogcatEntry = Parameters<Logcat['append']>[0]
+
+interface LogcatFilter {
+  priority?: number
+  package?: string
+  tag?: string
+}
+
+interface LogcatRenderedEntry extends LogcatEntry {
+  container: HTMLElement & { virtualListItem?: LogcatVirtualListItem }
+}
+
+interface LogcatVirtualListItem {
+  el: HTMLElement
+}
+
+interface LogcatVirtualList {
+  items: LogcatVirtualListItem[]
+  displayItems: LogcatVirtualListItem[]
+  render: () => void
+}
+
+interface LogcatInternals {
+  entries: LogcatRenderedEntry[]
+  displayEntries: LogcatRenderedEntry[]
+  virtualList: LogcatVirtualList
+}
 
 export default observer(function Logcat() {
   const [view, setView] = useState<'compact' | 'standard'>('standard')
@@ -57,13 +86,16 @@ export default observer(function Logcat() {
   )
   const searchRef = useRef(search.expression)
   const searchErrorId = useId()
-  const [filter, setFilter] = useState<{
-    priority?: number
-    package?: string
-    tag?: string
-  }>({})
+  const [filter, setFilter] = useState<LogcatFilter>({})
   const logcatRef = useRef<Logcat>(null)
-  const entriesRef = useRef<any[]>([])
+  const entriesRef = useRef<LogcatEntry[]>([])
+  const filterRef = useRef(filter)
+  const highlightedSearchRef = useRef<{
+    logcat: Logcat
+    expression: LogcatSearchExpression | null
+    filter: LogcatFilter
+    stop: () => void
+  } | null>(null)
   const logcatIdRef = useRef('')
 
   const { device } = store
@@ -102,7 +134,11 @@ export default observer(function Logcat() {
 
   useEffect(() => {
     searchRef.current = search.expression
-  }, [search.expression])
+    filterRef.current = filter
+    if (logcatRef.current) {
+      applyLogcatSearch(logcatRef.current, search.expression, filter)
+    }
+  }, [search.expression, filter])
 
   useEffect(() => {
     function onLogcatEntry(id, entry) {
@@ -111,9 +147,12 @@ export default observer(function Logcat() {
       }
       if (logcatRef.current) {
         entriesRef.current.push(entry)
-        if (matchesLogcatSearch(entry.message, searchRef.current)) {
-          logcatRef.current.append(entry)
-        }
+        appendLogcatEntry(
+          logcatRef.current,
+          entry,
+          searchRef.current,
+          filterRef.current
+        )
       }
     }
     const offLogcatEntry = main.on('logcatEntry', onLogcatEntry)
@@ -144,13 +183,13 @@ export default observer(function Logcat() {
   function save() {
     const data = map(entriesRef.current, (entry) => {
       return trim(
-        `${dateFormat(entry.date, 'mm-dd HH:MM:ss.l')} ${rpad(
-          entry.pid,
+        `${dateFormat(new Date(entry.date), 'mm-dd HH:MM:ss.l')} ${rpad(
+          toStr(entry.pid),
           5,
           ' '
-        )} ${rpad(entry.tid, 5, ' ')} ${toLetter(entry.priority)} ${
-          entry.tag
-        }: ${entry.message}`
+        )} ${rpad(toStr(entry.tid), 5, ' ')} ${toLetter(
+          entry.priority
+        )} ${entry.tag}: ${entry.message}`
       )
     }).join('\n')
     const name = `${store.device ? store.device.name : 'logcat'}.${dateFormat(
@@ -163,10 +202,99 @@ export default observer(function Logcat() {
   function clear() {
     if (logcatRef.current) {
       logcatRef.current.clear()
-      // Reset Luna's displayed-entry cache as well as its virtual list.
-      logcatRef.current.setOption('filter', { ...filter })
+      // Luna's clear() leaves its displayed-entry cache intact.
+      getLogcatInternals(logcatRef.current).displayEntries = []
     }
     entriesRef.current = []
+  }
+
+  function appendLogcatEntry(
+    logcat: Logcat,
+    entry: LogcatEntry,
+    expression: LogcatSearchExpression | null,
+    activeFilter: LogcatFilter
+  ) {
+    const internals = getLogcatInternals(logcat)
+    const { virtualList } = internals
+    const render = virtualList.render
+    const previousEntryCount = internals.entries.length
+    virtualList.render = () => {}
+    try {
+      logcat.append(entry)
+    } finally {
+      virtualList.render = render
+    }
+
+    const appended = internals.entries[internals.entries.length - 1]
+    const visible = internals.displayEntries.at(-1) === appended
+    const shouldDisplay = matchesLogcatEntry(
+      appended,
+      expression,
+      activeFilter
+    )
+    if (visible && !shouldDisplay) {
+      internals.displayEntries.pop()
+      const item = appended.container.virtualListItem
+      if (item && virtualList.items.at(-1) === item) {
+        virtualList.items.pop()
+      }
+    }
+
+    const entriesWereTrimmed =
+      internals.entries.length < previousEntryCount + 1
+    if (shouldDisplay || entriesWereTrimmed) {
+      render()
+    }
+  }
+
+  function applyLogcatSearch(
+    logcat: Logcat,
+    expression: LogcatSearchExpression | null,
+    activeFilter: LogcatFilter
+  ) {
+    const highlightedSearch = highlightedSearchRef.current
+    if (
+      highlightedSearch?.logcat === logcat &&
+      highlightedSearch.expression === expression &&
+      sameLogcatFilter(highlightedSearch.filter, activeFilter)
+    ) {
+      return
+    }
+
+    let stop = highlightedSearch?.stop || (() => {})
+    if (
+      highlightedSearch?.logcat !== logcat ||
+      highlightedSearch.expression !== expression
+    ) {
+      stop()
+      stop = highlightLogcat(logcat.container, expression)
+    }
+    highlightedSearchRef.current = {
+      logcat,
+      expression,
+      filter: { ...activeFilter },
+      stop,
+    }
+
+    const internals = getLogcatInternals(logcat)
+    internals.displayEntries = getLogcatSearchEntries(
+      internals.entries,
+      expression,
+      MAX_LOG_ENTRIES
+    ).filter((entry) => matchesLogcatEntry(entry, null, activeFilter))
+    // Luna has no message-filter API. Reuse its already measured virtual-list
+    // items so changing a query does not recreate thousands of DOM rows.
+    const items = internals.displayEntries.flatMap(
+      (entry) =>
+        entry.container.virtualListItem
+          ? [entry.container.virtualListItem]
+          : []
+    )
+    if (!sameLogcatItems(internals.virtualList.items, items)) {
+      internals.virtualList.items = items
+      internals.virtualList.displayItems = []
+      internals.virtualList.render()
+    }
   }
 
   function commitHistory(key: LogcatSearchHistoryKey, value: string) {
@@ -398,38 +526,23 @@ export default observer(function Logcat() {
         </div>
       )}
       <LunaLogcat
-        key={
-          search.expression
-            ? `${search.expression.pattern()}/${search.expression.flags()}`
-            : ''
-        }
         className={Style.body}
         maxNum={MAX_LOG_ENTRIES}
-        filter={filter}
         wrapLongLines={softWrap}
         onContextMenu={onContextMenu}
         view={view}
         onCreate={(logcat) => {
           logcatRef.current = logcat
-          const stopHighlight = highlightLogcat(
-            logcat.container,
-            search.expression
-          )
+          applyLogcatSearch(logcat, search.expression, filter)
           logcat.on('destroy', () => {
-            stopHighlight()
+            if (highlightedSearchRef.current?.logcat === logcat) {
+              highlightedSearchRef.current.stop()
+              highlightedSearchRef.current = null
+            }
             if (logcatRef.current === logcat) {
               logcatRef.current = null
             }
           })
-          // Rebuild only the viewer when searching; keep the original entries
-          // and the running ADB stream for save, pause and resume.
-          for (const entry of getLogcatSearchEntries(
-            entriesRef.current,
-            search.expression,
-            MAX_LOG_ENTRIES
-          )) {
-            logcat.append(entry)
-          }
         }}
       />
     </div>
@@ -438,4 +551,40 @@ export default observer(function Logcat() {
 
 function toLetter(priority: number) {
   return ['?', '?', 'V', 'D', 'I', 'W', 'E'][priority]
+}
+
+function getLogcatInternals(logcat: Logcat) {
+  return logcat as unknown as LogcatInternals
+}
+
+function matchesLogcatEntry(
+  entry: LogcatEntry,
+  expression: LogcatSearchExpression | null,
+  filter: LogcatFilter
+) {
+  if (filter.priority && entry.priority < filter.priority) {
+    return false
+  }
+  const packageName = trim(filter.package || '').toLowerCase()
+  if (packageName && !entry.package.toLowerCase().includes(packageName)) {
+    return false
+  }
+  const tag = trim(filter.tag || '').toLowerCase()
+  if (tag && !entry.tag.toLowerCase().includes(tag)) {
+    return false
+  }
+  return matchesLogcatSearch(entry.message, expression)
+}
+
+function sameLogcatFilter(a: LogcatFilter, b: LogcatFilter) {
+  return (
+    a.priority === b.priority && a.package === b.package && a.tag === b.tag
+  )
+}
+
+function sameLogcatItems(
+  a: LogcatVirtualListItem[],
+  b: LogcatVirtualListItem[]
+) {
+  return a.length === b.length && a.every((item, index) => item === b[index])
 }
