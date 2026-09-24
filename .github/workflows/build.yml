@@ -1,6 +1,9 @@
 name: Build
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -9,6 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, macos-13, ubuntu-latest]
 
@@ -24,7 +28,7 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     - uses: android-actions/setup-android@v3
-    - if: matrix.os == 'ubuntu'
+    - if: startsWith(matrix.os, 'ubuntu')
       run: |
         sudo apt-get install --no-install-recommends -y icnsutils graphicsmagick xz-utils
     - run: |
