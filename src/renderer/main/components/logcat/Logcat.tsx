@@ -1,7 +1,6 @@
 import { observer } from 'mobx-react-lite'
 import LunaToolbar, {
   LunaToolbarHtml,
-  LunaToolbarInput,
   LunaToolbarSelect,
   LunaToolbarSeparator,
   LunaToolbarSpace,
@@ -27,9 +26,18 @@ import {
   matchesLogcatSearch,
 } from './search'
 import { highlightLogcat } from './highlight'
+import HistoryInput from './HistoryInput'
+import {
+  addLogcatSearchHistory,
+  createEmptyLogcatSearchHistory,
+  LogcatSearchHistoryKey,
+  mergeLogcatSearchHistory,
+  normalizeLogcatSearchHistory,
+} from './history'
 import Style from './Logcat.module.scss'
 
 const MAX_LOG_ENTRIES = 10000
+const LOGCAT_SEARCH_HISTORY_STORE = 'logcatSearchHistory'
 
 export default observer(function Logcat() {
   const [view, setView] = useState<'compact' | 'standard'>('standard')
@@ -39,6 +47,10 @@ export default observer(function Logcat() {
   const [useRegex, setUseRegex] = useState(false)
   const [matchCase, setMatchCase] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchHistory, setSearchHistory] = useState(
+    createEmptyLogcatSearchHistory
+  )
+  const [searchHistoryLoaded, setSearchHistoryLoaded] = useState(false)
   const search = useMemo(
     () => createLogcatSearch(searchQuery, useRegex, matchCase),
     [searchQuery, useRegex, matchCase]
@@ -55,6 +67,28 @@ export default observer(function Logcat() {
   const logcatIdRef = useRef('')
 
   const { device } = store
+
+  useEffect(() => {
+    let active = true
+    main.getMainStore(LOGCAT_SEARCH_HISTORY_STORE).then((value) => {
+      if (active) {
+        const stored = normalizeLogcatSearchHistory(value)
+        setSearchHistory((current) =>
+          mergeLogcatSearchHistory(current, stored)
+        )
+        setSearchHistoryLoaded(true)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (searchHistoryLoaded) {
+      main.setMainStore(LOGCAT_SEARCH_HISTORY_STORE, searchHistory)
+    }
+  }, [searchHistory, searchHistoryLoaded])
 
   useEffect(() => {
     // Avoid rebuilding a large log buffer for every keystroke.
@@ -135,6 +169,24 @@ export default observer(function Logcat() {
     entriesRef.current = []
   }
 
+  function commitHistory(key: LogcatSearchHistoryKey, value: string) {
+    if (key === 'keyword' && createLogcatSearch(value, useRegex).error) {
+      return
+    }
+    setSearchHistory((history) => addLogcatSearchHistory(history, key, value))
+  }
+
+  function deleteHistory(key: LogcatSearchHistoryKey, value: string) {
+    setSearchHistory((history) => ({
+      ...history,
+      [key]: history[key].filter((item) => item !== value),
+    }))
+  }
+
+  function clearHistory(key: LogcatSearchHistoryKey) {
+    setSearchHistory((history) => ({ ...history, [key]: [] }))
+  }
+
   const onContextMenu = (e: PointerEvent, entry: any) => {
     e.preventDefault()
     const logcat = logcatRef.current!
@@ -213,32 +265,44 @@ export default observer(function Logcat() {
             ERROR: '6',
           }}
         />
-        <LunaToolbarInput
-          keyName="package"
-          placeholder={t('package')}
-          value={filter.package || ''}
-        />
-        <LunaToolbarInput
-          keyName="tag"
-          placeholder={t('tag')}
-          value={filter.tag || ''}
-        />
+        <LunaToolbarHtml className={Style.historyField}>
+          <HistoryInput
+            value={filter.package || ''}
+            history={searchHistory.package}
+            placeholder={t('package')}
+            onChange={(value) => setFilter({ ...filter, package: value })}
+            onCommit={(value) => commitHistory('package', value)}
+            onDelete={(value) => deleteHistory('package', value)}
+            onClear={() => clearHistory('package')}
+          />
+        </LunaToolbarHtml>
+        <LunaToolbarHtml className={Style.historyField}>
+          <HistoryInput
+            value={filter.tag || ''}
+            history={searchHistory.tag}
+            placeholder={t('tag')}
+            onChange={(value) => setFilter({ ...filter, tag: value })}
+            onCommit={(value) => commitHistory('tag', value)}
+            onDelete={(value) => deleteHistory('tag', value)}
+            onClear={() => clearHistory('tag')}
+          />
+        </LunaToolbarHtml>
         <LunaToolbarHtml className={Style.search}>
-          <input
+          <HistoryInput
             type="search"
-            className={Style.searchInput}
+            className={Style.keywordHistoryInput}
             placeholder={t('searchLogMessages')}
-            aria-label={t('searchLogMessages')}
-            aria-invalid={search.error}
-            aria-describedby={search.error ? searchErrorId : undefined}
+            ariaLabel={t('searchLogMessages')}
+            invalid={search.error}
+            describedBy={search.error ? searchErrorId : undefined}
             maxLength={1000}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                setQuery('')
-              }
-            }}
+            history={searchHistory.keyword}
+            onChange={setQuery}
+            onCommit={(value) => commitHistory('keyword', value)}
+            onDelete={(value) => deleteHistory('keyword', value)}
+            onClear={() => clearHistory('keyword')}
+            onEscape={() => setQuery('')}
           />
           <button
             type="button"

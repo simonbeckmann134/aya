@@ -19,6 +19,8 @@
   "useRegularExpression": "Düzenli ifade kullan",
   "matchCase": "Büyük/küçük harfe duyarlı",
   "invalidLogSearchRegex": "Düzenli ifade geçersiz veya güvenli değil. Anahtar kelime filtresi geçici olarak devre dışı bırakıldı.",
+  "deleteHistoryItem": "Geçmiş öğesini sil",
+  "clearSearchHistory": "Arama geçmişini temizle",
   "shell": "Komut Satırı",
   "settings": "Ayarlar",
   "deviceNotConnected": "Cihaz bağlı değil",

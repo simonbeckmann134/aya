@@ -19,6 +19,8 @@
   "useRegularExpression": "使用正規表示式",
   "matchCase": "區分大小寫",
   "invalidLogSearchRegex": "正規表示式無效或存在效能風險，已暫時停用關鍵字篩選。",
+  "deleteHistoryItem": "刪除歷史記錄",
+  "clearSearchHistory": "清除搜尋歷史",
   "shell": "終端",
   "settings": "設定",
   "deviceNotConnected": "設備未連接",

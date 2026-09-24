@@ -19,6 +19,8 @@
   "useRegularExpression": "Usar expressão regular",
   "matchCase": "Diferenciar maiúsculas de minúsculas",
   "invalidLogSearchRegex": "A expressão regular é inválida ou não é segura. O filtro por palavra-chave foi temporariamente desativado.",
+  "deleteHistoryItem": "Excluir item do histórico",
+  "clearSearchHistory": "Limpar histórico de pesquisa",
   "shell": "Shell",
   "settings": "Configurações",
   "deviceNotConnected": "Dispositivo não conectado",

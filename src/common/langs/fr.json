@@ -19,6 +19,8 @@
   "useRegularExpression": "Utiliser une expression régulière",
   "matchCase": "Respecter la casse",
   "invalidLogSearchRegex": "L’expression régulière n’est pas valide ou présente un risque. Le filtrage par mot-clé est temporairement désactivé.",
+  "deleteHistoryItem": "Supprimer l’élément de l’historique",
+  "clearSearchHistory": "Effacer l’historique de recherche",
   "shell": "Shell",
   "settings": "Paramètres",
   "deviceNotConnected": "Appareil non connecté",

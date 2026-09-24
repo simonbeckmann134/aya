@@ -8,6 +8,8 @@
   "useRegularExpression": "Use regular expression",
   "matchCase": "Match case",
   "invalidLogSearchRegex": "Invalid or unsafe regular expression. Keyword filtering is temporarily disabled.",
+  "deleteHistoryItem": "Delete history item",
+  "clearSearchHistory": "Clear search history",
   "shell": "Shell",
   "deviceNotConnected": "Device not connected",
   "screenshot": "Screenshot",
