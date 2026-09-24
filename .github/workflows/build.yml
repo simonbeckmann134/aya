@@ -31,13 +31,18 @@ jobs:
     - if: startsWith(matrix.os, 'ubuntu')
       run: |
         sudo apt-get install --no-install-recommends -y icnsutils graphicsmagick xz-utils
-    - run: |
-        npm i
-        npm run adb
-        npm run server
-        npm run scrcpy
-        npm run build
-        npm run pack
+    - name: Install dependencies
+      run: npm install
+    - name: Prepare ADB
+      run: npm run adb
+    - name: Build server
+      run: npm run server
+    - name: Prepare scrcpy
+      run: npm run scrcpy
+    - name: Build application
+      run: npm run build
+    - name: Package application
+      run: npm run pack
       env:
         APPLE_ID: ${{ secrets.APPLE_ID }}
         APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
