@@ -435,16 +435,6 @@ export default observer(function Logcat() {
           <button
             type="button"
             className={Style.searchButton}
-            title={t('clearLogSearch')}
-            aria-label={t('clearLogSearch')}
-            disabled={!query}
-            onClick={() => setQuery('')}
-          >
-            ×
-          </button>
-          <button
-            type="button"
-            className={Style.searchButton}
             title={t('useRegularExpression')}
             aria-label={t('useRegularExpression')}
             aria-pressed={useRegex}

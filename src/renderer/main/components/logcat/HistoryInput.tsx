@@ -142,6 +142,24 @@ export default function HistoryInput({
           }
         }}
       />
+      {value && (
+        <button
+          type="button"
+          className={Style.historyInputClear}
+          title={t('clearLogSearch')}
+          aria-label={t('clearLogSearch')}
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => {
+            dirtyRef.current = false
+            onChange('')
+            setOpen(false)
+            setActiveIndex(-1)
+            inputRef.current?.focus()
+          }}
+        >
+          ×
+        </button>
+      )}
       {open && hasHistory && (
         <div
           className={Style.historyMenu}

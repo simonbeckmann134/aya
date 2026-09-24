@@ -45,7 +45,7 @@
   min-width: 0;
   width: 100%;
   height: 22px;
-  padding: 2px 8px;
+  padding: 2px 26px 2px 8px;
   border: 1px solid var(--color-border);
   border-radius: 2px;
   background: var(--color-bg-container);
@@ -63,6 +63,33 @@
 
   &::-webkit-search-cancel-button {
     display: none;
+  }
+}
+
+.history-input-clear {
+  position: absolute;
+  z-index: 1;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  line-height: 18px;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--color-fill-secondary);
+    color: var(--color-text);
+  }
+
+  &:focus-visible {
+    outline: 1px solid var(--color-primary);
   }
 }
 
